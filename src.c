@@ -146,9 +146,9 @@ int main(int argc, char **argv) {
     float data4[sub_nz][sub_ny][sub_nx][NC];
     float mn_val[sub_nz][sub_ny][sub_nx][NC];
     float mx_val[sub_nz][sub_ny][sub_nx][NC];
-    float min_val = INT32_MAX, max_val = INT32_MIN;
-    int min_count = 0;
-    int max_count = 0;
+    float mn_val = INT32_MAX, mx_val = INT32_MIN;
+    int mn_count = 0;
+    int mx_count = 0;
 
     int index = 0;
     for(int i = 0;i<sub_nz;i++){
@@ -283,11 +283,7 @@ int main(int argc, char **argv) {
     transfer_function(rank,x_rank+1,y_rank+1,z_rank+1,bbr,recv_bbr,NC);
     transfer_function(rank,x_rank-1,y_rank+1,z_rank+1,bbl,recv_bbl,NC);
 
-    
 
-    
-
-    
 
     free(data3);
 
