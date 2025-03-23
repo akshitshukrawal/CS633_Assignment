@@ -67,6 +67,12 @@ void transfer_function(int r1, int x,int y,int z, float *send_buf, float *recv_b
     MPI_Isend(send_buf, buf_size, MPI_FLOAT, r2, 0, MPI_COMM_WORLD, &reqs[numb_request++]);
     MPI_Irecv(recv_buf, buf_size, MPI_FLOAT, r2, 0, MPI_COMM_WORLD, &reqs[numb_request++]);
 
+<<<<<<< HEAD
+=======
+    MPI_Isend(send_buf, buf_size, MPI_FLOAT, r2, r2, MPI_COMM_WORLD, &reqs[0]);
+    MPI_Irecv(recv_buf, buf_size, MPI_FLOAT, r2, r1, MPI_COMM_WORLD, &reqs[1]);
+
+>>>>>>> 3d0e99dbada0aa3f08b38a5b915c2767c1cb1b59
 }
 
 int main(int argc, char **argv) {
@@ -479,7 +485,21 @@ int main(int argc, char **argv) {
     }
     
 
+<<<<<<< HEAD
     
+=======
+    printf("%d\n",rank);
+    for(int k=0;k<sub_nz;k++){
+        for(int j=0;j<sub_ny;j++){
+            for(int i =0;i<sub_nx;i++){
+                for(int x =0;x <NC;x++){
+                    printf("%f ",mn_val[k][j][i][x]);
+                }printf(" , ");
+            }printf("\n");
+        }printf("\n\n");
+    }
+
+>>>>>>> 3d0e99dbada0aa3f08b38a5b915c2767c1cb1b59
     for(int i = -1;i<2;i++){
         for(int j = -1;j<2;j++){
             for(int k = -1;k<2;k++){
