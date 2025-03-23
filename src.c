@@ -22,13 +22,13 @@ int valid(int x,int y,int z){
     return 1;
 }
 
-int min(int x,int y){
+float min(float x,float y){
     if(x>y){
         return y;
     }
     return x;
 }
-int max(int x,int y){
+float max(float x,float y){
     if(x<y){
         return y;
     }
@@ -52,23 +52,25 @@ int get(int nx,int ny,int nz){
     return -1;
 }
 
+MPI_Request reqs[56];
+MPI_Status stats[56];
+int numb_request = 0;
+
 void transfer_function(int r1, int x,int y,int z, float *send_buf, float *recv_buf, int buf_size) {
     int r2 = get(x,y,z);
     if(r2 == -1){
         return;
     }
-    MPI_Request reqs[2];
-    MPI_Status stats[2];
+    if(r1 == 0 && r2 == 1){
+        printf("reached\n");
+    }
+    MPI_Isend(send_buf, buf_size, MPI_FLOAT, r2, 0, MPI_COMM_WORLD, &reqs[numb_request++]);
+    MPI_Irecv(recv_buf, buf_size, MPI_FLOAT, r2, 0, MPI_COMM_WORLD, &reqs[numb_request++]);
 
-    MPI_Isend(send_buf, buf_size, MPI_FLOAT, r2, r2, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Irecv(recv_buf, buf_size, MPI_FLOAT, r2, r1, MPI_COMM_WORLD, &reqs[1]);
-
-    MPI_Waitall(2, reqs, stats);
 }
 
 int main(int argc, char **argv) {
     char input_file[256], output_file[256];
-
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -177,8 +179,8 @@ int main(int argc, char **argv) {
     for(int i = 0;i<NC;i++){
         lcl_mn[i] = FLT_MAX;
         lcl_mx[i] = FLT_MIN;
-        mn_count[i] = INT16_MAX;
-        mx_count[i] = INT16_MIN;
+        mn_count[i] = 1000000;
+        mx_count[i] = -1000000;
     }
 
     int index = 0;
@@ -187,8 +189,8 @@ int main(int argc, char **argv) {
             for(int k=0;k<sub_nx;k++){
                 for(int x = 0;x < NC;x++){
                     data4[i][j][k][x] = data3[index];
-                    mn_val[i][j][k][x] = FLT_MIN;
-                    mx_val[i][j][k][x] = FLT_MAX;
+                    mn_val[i][j][k][x] = FLT_MAX;
+                    mx_val[i][j][k][x] = FLT_MIN;
                     index++;
                 }
             }
@@ -226,6 +228,7 @@ int main(int argc, char **argv) {
             }
         }
     }
+    
 
     //faces data gathering
     float recv_right[sub_nz][sub_ny][NC];
@@ -234,13 +237,7 @@ int main(int argc, char **argv) {
     float recv_top[sub_ny][sub_nx][NC];
     float recv_front[sub_nz][sub_nx][NC];
     float recv_back[sub_nz][sub_nx][NC];
-    transfer_function(rank,x_rank,y_rank,z_rank -1,(float *)top,(float *)recv_top,sub_ny*sub_nx*NC);
-    transfer_function(rank,x_rank,y_rank,z_rank+1,(float *)bottom,(float *)recv_bottom,sub_ny*sub_nx*NC);
-    transfer_function(rank,x_rank-1,y_rank,z_rank,(float *)left,(float *)recv_left,sub_ny*sub_nz*NC);
-    transfer_function(rank,x_rank+1,y_rank,z_rank,(float *)right,(float *)recv_right,sub_ny*sub_nz*NC);
-    transfer_function(rank,x_rank,y_rank-1,z_rank,(float *)front,(float *)recv_front,sub_nx*sub_nz*NC);
-    transfer_function(rank,x_rank,y_rank+1,z_rank,(float *)back,(float *)recv_back,sub_nx*sub_nz*NC);
-
+    
     //data for edges
     float tf[sub_nx][NC],tb[sub_nx][NC],tr[sub_ny][NC],tl[sub_ny][NC];
     float bf[sub_nx][NC],bb[sub_nx][NC],br[sub_ny][NC],bl[sub_ny][NC];
@@ -269,25 +266,13 @@ int main(int argc, char **argv) {
             bar[i][x] = data4[i][sub_ny-1][sub_nx-1][x];
         }
     }
-
+    
     //data gathering for edges ..
     float recv_tf[sub_nx][NC],recv_tb[sub_nx][NC],recv_tr[sub_ny][NC],recv_tl[sub_ny][NC];
     float recv_bf[sub_nx][NC],recv_bb[sub_nx][NC],recv_br[sub_ny][NC],recv_bl[sub_ny][NC];
     float recv_fr[sub_nz][NC],recv_fl[sub_nz][NC],recv_bar[sub_nz][NC],recv_bal[sub_nz][NC];
 
-    transfer_function(rank,x_rank-1,y_rank,z_rank-1,(float *)tl,(float *)recv_tl,sub_nx*NC);
-    transfer_function(rank,x_rank+1,y_rank,z_rank-1,(float *)tr,(float *)recv_tr,sub_nx*NC);
-    transfer_function(rank,x_rank,y_rank+1,z_rank-1,(float *)tf,(float *)recv_tf,sub_ny*NC);
-    transfer_function(rank,x_rank,y_rank-1,z_rank-1,(float *)tb,(float *)recv_tb,sub_ny*NC);
-    transfer_function(rank,x_rank-1,y_rank,z_rank+1,(float *)bl,(float *)recv_bl,sub_nx*NC);
-    transfer_function(rank,x_rank+1,y_rank,z_rank+1,(float *)br,(float *)recv_br,sub_nx*NC);
-    transfer_function(rank,x_rank,y_rank+1,z_rank+1,(float *)bf,(float *)recv_bf,sub_ny*NC);
-    transfer_function(rank,x_rank,y_rank-1,z_rank+1,(float *)bb,(float *)recv_bb,sub_ny*NC);
-    transfer_function(rank,x_rank-1,y_rank-1,z_rank,(float *)fl,(float *)recv_fl,sub_nz*NC);
-    transfer_function(rank,x_rank+1,y_rank-1,z_rank,(float *)fr,(float *)recv_fr,sub_ny*NC);
-    transfer_function(rank,x_rank-1,y_rank+1,z_rank,(float *)bal,(float *)recv_bal,sub_ny*NC);
-    transfer_function(rank,x_rank-1,y_rank+1,z_rank,(float *)bar,(float *)recv_bar,sub_ny*NC);
-
+    
     //corners
     
     float tfr[NC],tfl[NC],tbr[NC],tbl[NC],bfr[NC],bfl[NC],bbr[NC],bbl[NC];
@@ -301,105 +286,200 @@ int main(int argc, char **argv) {
         bbl[x] = data4[sub_nz-1][sub_ny-1][0][x];
         bbr[x] = data4[sub_nz-1][sub_ny-1][sub_nx-1][x];
     }
-
+    
     float recv_tfr[NC],recv_tfl[NC],recv_tbr[NC],recv_tbl[NC],recv_bfr[NC],recv_bfl[NC],recv_bbr[NC],recv_bbl[NC];
+    transfer_function(rank,x_rank,y_rank,z_rank -1,(float *)top,(float *)recv_top,sub_ny*sub_nx*NC);
+    transfer_function(rank,x_rank,y_rank,z_rank+1,(float *)bottom,(float *)recv_bottom,sub_ny*sub_nx*NC);
+    transfer_function(rank,x_rank-1,y_rank,z_rank,(float *)left,(float *)recv_left,sub_ny*sub_nz*NC);
+    transfer_function(rank,x_rank+1,y_rank,z_rank,(float *)right,(float *)recv_right,sub_ny*sub_nz*NC);
+    transfer_function(rank,x_rank,y_rank-1,z_rank,(float *)front,(float *)recv_front,sub_nx*sub_nz*NC);
+    transfer_function(rank,x_rank,y_rank+1,z_rank,(float *)back,(float *)recv_back,sub_nx*sub_nz*NC);
+    
+    transfer_function(rank,x_rank-1,y_rank,z_rank-1,(float *)tl,(float *)recv_tl,sub_nx*NC);
+    transfer_function(rank,x_rank+1,y_rank,z_rank-1,(float *)tr,(float *)recv_tr,sub_nx*NC);
+    transfer_function(rank,x_rank,y_rank+1,z_rank-1,(float *)tf,(float *)recv_tf,sub_ny*NC);
+    transfer_function(rank,x_rank,y_rank-1,z_rank-1,(float *)tb,(float *)recv_tb,sub_ny*NC);
+    transfer_function(rank,x_rank-1,y_rank,z_rank+1,(float *)bl,(float *)recv_bl,sub_nx*NC);
+    transfer_function(rank,x_rank+1,y_rank,z_rank+1,(float *)br,(float *)recv_br,sub_nx*NC);
+    transfer_function(rank,x_rank,y_rank+1,z_rank+1,(float *)bf,(float *)recv_bf,sub_ny*NC);
+    transfer_function(rank,x_rank,y_rank-1,z_rank+1,(float *)bb,(float *)recv_bb,sub_ny*NC);
+    transfer_function(rank,x_rank-1,y_rank-1,z_rank,(float *)fl,(float *)recv_fl,sub_nz*NC);
+    transfer_function(rank,x_rank+1,y_rank-1,z_rank,(float *)fr,(float *)recv_fr,sub_ny*NC);
+    transfer_function(rank,x_rank-1,y_rank+1,z_rank,(float *)bal,(float *)recv_bal,sub_ny*NC);
+    transfer_function(rank,x_rank-1,y_rank+1,z_rank,(float *)bar,(float *)recv_bar,sub_ny*NC);
+    
+    transfer_function(rank,x_rank+1,y_rank-1,z_rank-1,(float *)tfr,(float *)recv_tfr,NC);
+    transfer_function(rank,x_rank-1,y_rank-1,z_rank-1,(float *)tfl,(float *)recv_tfl,NC);
+    transfer_function(rank,x_rank+1,y_rank+1,z_rank-1,(float *)tbr,(float *)recv_tbr,NC);
+    transfer_function(rank,x_rank-1,y_rank+1,z_rank-1,(float *)tbl,(float *)recv_tbl,NC);
+    transfer_function(rank,x_rank+1,y_rank-1,z_rank+1,(float *)bfr,(float *)recv_bfr,NC);
+    transfer_function(rank,x_rank-1,y_rank-1,z_rank+1,(float *)bfl,(float *)recv_bfl,NC);
+    transfer_function(rank,x_rank+1,y_rank+1,z_rank+1,(float *)bbr,(float *)recv_bbr,NC);
+    transfer_function(rank,x_rank-1,y_rank+1,z_rank+1,(float *)bbl,(float *)recv_bbl,NC);
+    
+    MPI_Waitall(numb_request, reqs, stats);
+    if(rank == 0){
+        for(int k = 0;k<sub_nz;k++){
+            for(int j = 0;j<sub_ny;j++){
+                for(int x =0;x < NC;x++){
+                    printf("%f ",recv_right[k][j][x]);
+                }printf(" , ");
+            }printf("\n");
+        }
+    }
+    printf("%d\n",rank);
+    if(rank == 0){
+        for(int k=0;k<sub_nz;k++){
+            for(int j=0;j<sub_ny;j++){
+                for(int i =0;i<sub_nx;i++){
+                    for(int x =0;x <NC;x++){
+                        printf("%f ",data4[k][j][i][x]);
+                    }printf(" , ");
+                }printf("\n");
+            }printf("\n\n");
+        }
+    }
 
-    transfer_function(rank,x_rank+1,y_rank-1,z_rank-1,tfr,recv_tfr,NC);
-    transfer_function(rank,x_rank-1,y_rank-1,z_rank-1,tfl,recv_tfl,NC);
-    transfer_function(rank,x_rank+1,y_rank+1,z_rank-1,tbr,recv_tbr,NC);
-    transfer_function(rank,x_rank-1,y_rank+1,z_rank-1,tbl,recv_tbl,NC);
-    transfer_function(rank,x_rank+1,y_rank-1,z_rank+1,bfr,recv_bfr,NC);
-    transfer_function(rank,x_rank-1,y_rank-1,z_rank+1,bfl,recv_bfl,NC);
-    transfer_function(rank,x_rank+1,y_rank+1,z_rank+1,bbr,recv_bbr,NC);
-    transfer_function(rank,x_rank-1,y_rank+1,z_rank+1,bbl,recv_bbl,NC);
-
-    MPI_Barrier(MPI_COMM_WORLD);
 
     for(int i = 0;i<sub_nx;i++){
         for(int j = 0;j<sub_ny;j++){
             for(int x =0;x < NC;x++){
-                mn_val[0][j][i][x] = min(mn_val[0][j][i][x],recv_top[j][i][x]);
-                mn_val[sub_nz-1][j][i][x] = min(mn_val[sub_nz-1][j][i][x],recv_bottom[j][i][x]);
-                mx_val[0][j][i][x] = max(mx_val[0][j][i][x],recv_top[j][i][x]);
-                mx_val[sub_nz-1][j][i][x] = max(mx_val[sub_nz-1][j][i][x],recv_bottom[j][i][x]);
+                if(get(x_rank,y_rank,z_rank-1)!=-1){
+                    mn_val[0][j][i][x] = min(mn_val[0][j][i][x],recv_top[j][i][x]);
+                    mx_val[0][j][i][x] = max(mx_val[0][j][i][x],recv_top[j][i][x]);
+                }
+                if(get(x_rank,y_rank,z_rank+1)!=-1){
+                    mn_val[sub_nz-1][j][i][x] = min(mn_val[sub_nz-1][j][i][x],recv_bottom[j][i][x]);
+                    mx_val[sub_nz-1][j][i][x] = max(mx_val[sub_nz-1][j][i][x],recv_bottom[j][i][x]);
+                }
             }
         }
     }
     for(int i = 0;i<sub_nz;i++){
         for(int j = 0;j<sub_ny;j++){
             for(int x =0;x < NC;x++){
-                mn_val[i][j][0][x] = min(mn_val[i][j][0][x],recv_left[i][j][x]);
-                mn_val[i][j][sub_nx-1][x] = min(mn_val[i][j][sub_nx-1][x],recv_right[i][j][x]);
-                mx_val[i][j][0][x] = max(mx_val[i][j][0][x],recv_left[i][j][x]);
-                mx_val[i][j][sub_nx-1][x] = max(mx_val[i][j][sub_nx-1][x],recv_right[i][j][x]);
+                if(get(x_rank-1,y_rank,z_rank)){
+                    mn_val[i][j][0][x] = min(mn_val[i][j][0][x],recv_left[i][j][x]);
+                    mx_val[i][j][0][x] = max(mx_val[i][j][0][x],recv_left[i][j][x]);
+                }
+                if(get(x_rank-1,y_rank,z_rank)!=-1){
+                    mn_val[i][j][sub_nx-1][x] = min(mn_val[i][j][sub_nx-1][x],recv_right[i][j][x]);
+                    mx_val[i][j][sub_nx-1][x] = max(mx_val[i][j][sub_nx-1][x],recv_right[i][j][x]);
+                }
             }
         }
     }
     for(int i = 0;i<sub_nx;i++){
         for(int j = 0;j<sub_nz;j++){
             for(int x =0;x < NC;x++){
-                mn_val[j][0][i][x] = min(mn_val[j][0][i][x],recv_front[j][i][x]);
-                mn_val[j][sub_ny-1][i][x] = min(mn_val[j][sub_ny-1][i][x],recv_back[j][i][x]);
-                mx_val[j][0][i][x] = max(mx_val[j][0][i][x],recv_front[j][i][x]);
-                mx_val[j][sub_ny-1][i][x] = max(mx_val[j][sub_ny-1][i][x],recv_back[j][i][x]);
+                if(get(x_rank,y_rank-1,z_rank)!=-1){
+                    mn_val[j][0][i][x] = min(mn_val[j][0][i][x],recv_front[j][i][x]);
+                    mx_val[j][0][i][x] = max(mx_val[j][0][i][x],recv_front[j][i][x]);
+                }
+                if(get(x_rank,y_rank+1,z_rank)!=-1){
+                    mn_val[j][sub_ny-1][i][x] = min(mn_val[j][sub_ny-1][i][x],recv_back[j][i][x]);
+                    mx_val[j][sub_ny-1][i][x] = max(mx_val[j][sub_ny-1][i][x],recv_back[j][i][x]);
+                }
             }
         }
     }
     for(int i = 0;i<sub_nx;i++){
         for(int x = 0;x < NC;x++){
-            mn_val[0][0][i][x] = min(mn_val[0][0][i][x],recv_tf[i][x]);
-            mn_val[0][sub_ny-1][i][x] = min(mn_val[0][sub_ny-1][i][x],recv_tb[i][x]);
-            mn_val[sub_nz-1][0][i][x] = min(mn_val[sub_nz-1][0][i][x],recv_bf[i][x]);
-            mn_val[sub_nz-1][sub_ny-1][i][x] = min(mn_val[sub_nz-1][sub_ny-1][i][x],recv_bb[i][x]);
-            mx_val[0][0][i][x] = max(mx_val[0][0][i][x],recv_tf[i][x]);
-            mx_val[0][sub_ny-1][i][x] = max(mx_val[0][sub_ny-1][i][x],recv_tb[i][x]);
-            mx_val[sub_nz-1][0][i][x] = max(mx_val[sub_nz-1][0][i][x],recv_bf[i][x]);
-            mx_val[sub_nz-1][sub_ny-1][i][x] = max(mx_val[sub_nz-1][sub_ny-1][i][x],recv_bb[i][x]);
+            if(get(x_rank,y_rank-1,z_rank-1)!=-1){
+                mx_val[0][0][i][x] = max(mx_val[0][0][i][x],recv_tf[i][x]);
+                mn_val[0][0][i][x] = min(mn_val[0][0][i][x],recv_tf[i][x]);
+            }
+            if(get(x_rank,y_rank+1,z_rank-1)!=-1){
+                mn_val[0][sub_ny-1][i][x] = min(mn_val[0][sub_ny-1][i][x],recv_tb[i][x]);
+                mx_val[0][sub_ny-1][i][x] = max(mx_val[0][sub_ny-1][i][x],recv_tb[i][x]);
+            }
+            if(get(x_rank,y_rank-1,z_rank+1)!=-1){
+                mn_val[sub_nz-1][0][i][x] = min(mn_val[sub_nz-1][0][i][x],recv_bf[i][x]);
+                mx_val[sub_nz-1][0][i][x] = max(mx_val[sub_nz-1][0][i][x],recv_bf[i][x]);
+            }
+            if(get(x_rank,y_rank+1,z_rank+1)!=-1){
+                mn_val[sub_nz-1][sub_ny-1][i][x] = min(mn_val[sub_nz-1][sub_ny-1][i][x],recv_bb[i][x]);
+                mx_val[sub_nz-1][sub_ny-1][i][x] = max(mx_val[sub_nz-1][sub_ny-1][i][x],recv_bb[i][x]);
+            }
         }
     }
     for(int i = 0;i<sub_ny;i++){
         for(int x = 0;x < NC;x++){
-            mn_val[0][i][0][x] = min(mn_val[0][i][0][x],recv_tl[i][x]);
-            mn_val[0][i][sub_nx-1][x] = min(mn_val[0][i][sub_nx-1][x],recv_tr[i][x]);
-            mn_val[sub_nz-1][i][0][x] = min(mn_val[sub_nz-1][i][0][x],recv_bl[i][x]);
-            mn_val[sub_nz-1][sub_ny-1][i][x] = min(mn_val[sub_nz-1][sub_ny-1][i][x],recv_br[i][x]);
-            mx_val[0][i][0][x] = max(mx_val[0][i][0][x],recv_tl[i][x]);
-            mx_val[0][i][sub_nx-1][x] = max(mx_val[0][i][sub_nx-1][x],recv_tr[i][x]);
-            mx_val[sub_nz-1][i][0][x] = max(mx_val[sub_nz-1][i][0][x],recv_bl[i][x]);
-            mx_val[sub_nz-1][i][sub_nx-1][x] = max(mx_val[sub_nz-1][i][sub_nx-1][x],recv_br[i][x]);
+            if(get(x_rank-1,y_rank,z_rank-1)!=-1){
+                mn_val[0][i][0][x] = min(mn_val[0][i][0][x],recv_tl[i][x]);
+                mx_val[0][i][0][x] = max(mx_val[0][i][0][x],recv_tl[i][x]);
+            }
+            if(get(x_rank-1,y_rank,z_rank-1)!=-1){
+                mn_val[sub_nz-1][i][0][x] = min(mn_val[sub_nz-1][i][0][x],recv_bl[i][x]);
+                mx_val[sub_nz-1][i][0][x] = max(mx_val[sub_nz-1][i][0][x],recv_bl[i][x]);
+            }
+            if(get(x_rank+1,y_rank,z_rank-1)!=-1){
+                mn_val[0][i][sub_nx-1][x] = min(mn_val[0][i][sub_nx-1][x],recv_tr[i][x]);
+                mx_val[0][i][sub_nx-1][x] = max(mx_val[0][i][sub_nx-1][x],recv_tr[i][x]);
+            }
+            if(get(x_rank+1,y_rank,z_rank+1)!=-1){
+                mn_val[sub_nz-1][sub_ny-1][i][x] = min(mn_val[sub_nz-1][sub_ny-1][i][x],recv_br[i][x]);
+                mx_val[sub_nz-1][i][sub_nx-1][x] = max(mx_val[sub_nz-1][i][sub_nx-1][x],recv_br[i][x]);
+            }
         }
     }
     for(int i = 0;i<sub_nz;i++){
         for(int x = 0;x < NC;x++){
-            mn_val[i][0][sub_nx-1][x] = min(mn_val[i][0][sub_nx-1][x],recv_fr[i][x]);
-            mn_val[i][0][0][x] = min(mn_val[i][0][0][x],recv_fl[i][x]);
-            mn_val[i][sub_ny-1][0][x] = min(mn_val[i][sub_ny-1][0][x],recv_bal[i][x]);
-            mn_val[i][sub_ny-1][sub_nx-1][x] = min(mn_val[i][sub_ny-1][sub_nx-1][x],recv_bar[i][x]);
-            mx_val[i][0][sub_nx-1][x] = max(mx_val[i][0][sub_nx-1][x],recv_fr[i][x]);
-            mx_val[i][0][0][x] = max(mx_val[i][0][0][x],recv_fl[i][x]);
-            mx_val[i][sub_ny-1][0][x] = max(mx_val[i][sub_ny-1][0][x],recv_bal[i][x]);
-            mx_val[i][sub_ny-1][sub_nx-1][x] = max(mx_val[i][sub_ny-1][sub_nx-1][x],recv_bar[i][x]);
+            if(get(x_rank+1,y_rank-1,z_rank)!=-1){
+                mn_val[i][0][sub_nx-1][x] = min(mn_val[i][0][sub_nx-1][x],recv_fr[i][x]);
+                mx_val[i][0][sub_nx-1][x] = max(mx_val[i][0][sub_nx-1][x],recv_fr[i][x]);
+            }
+            if(get(x_rank-1,y_rank+1,z_rank)!=-1){
+                mx_val[i][sub_ny-1][0][x] = max(mx_val[i][sub_ny-1][0][x],recv_bal[i][x]);
+                mn_val[i][sub_ny-1][0][x] = min(mn_val[i][sub_ny-1][0][x],recv_bal[i][x]);
+            }
+            if(get(x_rank-1,y_rank-1,z_rank)!=-1){
+                mn_val[i][0][0][x] = min(mn_val[i][0][0][x],recv_fl[i][x]);
+                mx_val[i][0][0][x] = max(mx_val[i][0][0][x],recv_fl[i][x]);
+            }
+            if(get(x_rank+1,y_rank+1,z_rank)!=-1){
+                mn_val[i][sub_ny-1][sub_nx-1][x] = min(mn_val[i][sub_ny-1][sub_nx-1][x],recv_bar[i][x]);
+                mx_val[i][sub_ny-1][sub_nx-1][x] = max(mx_val[i][sub_ny-1][sub_nx-1][x],recv_bar[i][x]);
+            }
         }
     }
-    for(int x =0 ;x<NC;x++){
-        mn_val[0][0][0][x] = min(mn_val[0][0][0][x],recv_tfl[x]);
-        mn_val[0][0][sub_nx-1][x] = min(mn_val[0][0][sub_nx-1][x],recv_tfr[x]);
-        mn_val[0][sub_ny-1][0][x] = min(mn_val[0][sub_ny-1][0][x],recv_tbl[x]);
-        mn_val[0][sub_ny-1][sub_nx-1][x] = min(mn_val[0][sub_ny-1][sub_nx-1][x],recv_tbr[x]);
-        mn_val[sub_nz-1][0][0][x] = min(mn_val[sub_nz-1][0][0][x],recv_bfl[x]);
-        mn_val[sub_nz-1][0][sub_nx-1][x] = min(mn_val[sub_nz-1][0][sub_nx-1][x],recv_bfr[x]);
-        mn_val[sub_nz-1][sub_ny-1][0][x] = min(mn_val[sub_nz-1][sub_ny-1][0][x],recv_bbl[x]);
-        mn_val[sub_nz-1][sub_ny-1][sub_nx-1][x] = min(mn_val[sub_nz-1][sub_ny-1][sub_nx-1][x],recv_bbr[x]);
-        mx_val[0][0][0][x] = max(mx_val[0][0][0][x],recv_tfl[x]);
-        mx_val[0][0][sub_nx-1][x] = max(mx_val[0][0][sub_nx-1][x],recv_tfr[x]);
-        mx_val[0][sub_ny-1][0][x] = max(mx_val[0][sub_ny-1][0][x],recv_tbl[x]);
-        mx_val[0][sub_ny-1][sub_nx-1][x] = max(mx_val[0][sub_ny-1][sub_nx-1][x],recv_tbr[x]);
-        mx_val[sub_nz-1][0][0][x] = max(mx_val[sub_nz-1][0][0][x],recv_bfl[x]);
-        mx_val[sub_nz-1][0][sub_nx-1][x] = max(mx_val[sub_nz-1][0][sub_nx-1][x],recv_bfr[x]);
-        mx_val[sub_nz-1][sub_ny-1][0][x] = max(mx_val[sub_nz-1][sub_ny-1][0][x],recv_bbl[x]);
-        mx_val[sub_nz-1][sub_ny-1][sub_nx-1][x] = max(mx_val[sub_nz-1][sub_ny-1][sub_nx-1][x],recv_bbr[x]);
+    for(int x =0;x<NC;x++){
+        if(get(x_rank-1,y_rank-1,z_rank-1)!=-1){
+            mn_val[0][0][0][x] = min(mn_val[0][0][0][x],recv_tfl[x]);
+            mx_val[0][0][0][x] = max(mx_val[0][0][0][x],recv_tfl[x]);
+        }
+        if(get(x_rank+1,y_rank-1,z_rank-1)!=-1){
+            mn_val[0][0][sub_nx-1][x] = min(mn_val[0][0][sub_nx-1][x],recv_tfr[x]);
+            mx_val[0][0][sub_nx-1][x] = max(mx_val[0][0][sub_nx-1][x],recv_tfr[x]);
+        }
+        if(get(x_rank-1,y_rank+1,z_rank-1)!=-1){
+            mn_val[0][sub_ny-1][0][x] = min(mn_val[0][sub_ny-1][0][x],recv_tbl[x]);
+            mx_val[0][sub_ny-1][0][x] = max(mx_val[0][sub_ny-1][0][x],recv_tbl[x]);
+        }
+        if(get(x_rank+1,y_rank+1,z_rank-1)!=-1){
+            mn_val[0][sub_ny-1][sub_nx-1][x] = min(mn_val[0][sub_ny-1][sub_nx-1][x],recv_tbr[x]);
+            mx_val[0][sub_ny-1][sub_nx-1][x] = max(mx_val[0][sub_ny-1][sub_nx-1][x],recv_tbr[x]);
+        }
+        if(get(x_rank-1,y_rank+1,z_rank+1)!=-1){
+            mn_val[sub_nz-1][0][0][x] = min(mn_val[sub_nz-1][0][0][x],recv_bfl[x]);
+            mx_val[sub_nz-1][0][0][x] = max(mx_val[sub_nz-1][0][0][x],recv_bfl[x]);
+        }
+        if(get(x_rank+1,y_rank-1,z_rank+1)!=-1){
+            mn_val[sub_nz-1][0][sub_nx-1][x] = min(mn_val[sub_nz-1][0][sub_nx-1][x],recv_bfr[x]);
+            mx_val[sub_nz-1][0][sub_nx-1][x] = max(mx_val[sub_nz-1][0][sub_nx-1][x],recv_bfr[x]);
+        }
+        if(get(x_rank-1,y_rank+1,z_rank+1)!=-1){
+            mn_val[sub_nz-1][sub_ny-1][0][x] = min(mn_val[sub_nz-1][sub_ny-1][0][x],recv_bbl[x]);
+            mx_val[sub_nz-1][sub_ny-1][0][x] = max(mx_val[sub_nz-1][sub_ny-1][0][x],recv_bbl[x]);
+        }
+        if(get(x_rank+1,y_rank+1,z_rank+1)!=-1){
+            mn_val[sub_nz-1][sub_ny-1][sub_nx-1][x] = min(mn_val[sub_nz-1][sub_ny-1][sub_nx-1][x],recv_bbr[x]);
+            mx_val[sub_nz-1][sub_ny-1][sub_nx-1][x] = max(mx_val[sub_nz-1][sub_ny-1][sub_nx-1][x],recv_bbr[x]);
+        }
     }
+    
 
+    
     for(int i = -1;i<2;i++){
         for(int j = -1;j<2;j++){
             for(int k = -1;k<2;k++){
@@ -422,6 +502,7 @@ int main(int argc, char **argv) {
             }
         }
     }
+    
 
     for(int i = 0;i<sub_nx;i++){
         for(int j = 0;j<sub_ny;j++){
@@ -447,7 +528,18 @@ int main(int argc, char **argv) {
     MPI_Reduce(lcl_mx,glb_mx,NC,MPI_FLOAT,MPI_MAX,0,MPI_COMM_WORLD);
     MPI_Reduce(mn_count,glb_mn_count,NC,MPI_INT,MPI_SUM,0,MPI_COMM_WORLD);
     MPI_Reduce(mx_count,glb_mx_count,NC,MPI_INT,MPI_SUM,0,MPI_COMM_WORLD);
-    
+
+    // printf("%d\n",rank);
+    // for(int k=0;k<sub_nz;k++){
+    //     for(int j=0;j<sub_ny;j++){
+    //         for(int i =0;i<sub_nx;i++){
+    //             for(int x =0;x <NC;x++){
+    //                 printf("%f ",mn_val[k][j][i][x]);
+    //             }printf(" , ");
+    //         }printf("\n");
+    //     }printf("\n\n");
+    // }
+
     if (rank == 0) {
         FILE *file = fopen(output_file, "w");
         if (file == NULL) {
@@ -456,17 +548,21 @@ int main(int argc, char **argv) {
         }
 
         for(int i = 0;i<NC;i++){
-            fprintf(file,"( %d , %d )",glb_mn_count,glb_mx_count);
+            fprintf(file,"( %d , %d )",glb_mn_count[i],glb_mx_count[i]);
             if(i<NC-1){
                 fprintf(file," , ");
+            }else{
+                fprintf(file,"\n");
             }
-        }fprintf(file,"\n");
+        }
         for(int i = 0;i<NC;i++){
-            fprintf(file,"( %f , %f )",glb_mn,glb_mx);
+            fprintf(file,"( %f , %f )",glb_mn[i],glb_mx[i]);
             if(i<NC-1){
                 fprintf(file," , ");
+            }else{
+                fprintf(file,"\n");
             }
-        }fprintf(file,"\n");
+        }
 
         fclose(file);
     }
